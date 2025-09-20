@@ -78,53 +78,59 @@ app.get("/events/eventType/:eventType",async(req,res)=>{
 })
 
 
-// Search events by TITLE
-async function searchEventsByTitle(searchTerm) {
-  try {
+// Search events by TITLE or tags
 
-    const regex = new RegExp(searchTerm.trim(), "i");
+async function searchEvents(searchTerm) {
+  const regex = new RegExp(searchTerm.trim(), "i");
 
-    const events = await Event.find({ eventName: regex });
-
-    console.log(`Search "${searchTerm}" returned ${events.length} events`);
-    return events;
-  } catch (error) {
-    console.error("Search error:", error);
-    throw error;
-  }
+  // Will return events whose eventName matches OR whose tags array contains a matching element
+  return await Event.find({
+    $or: [
+      { eventName: regex },
+      { tags: regex }
+    ]
+  });
 }
 
 
+// Search events by TITLE or tags
+app.get("/events/search/:searchTerm", async (req, res) => {
+  try {
+    const searchTerm = req.params.searchTerm.trim();
+    const regex = new RegExp(searchTerm, "i");
 
-// Search endpoint
-app.get("/events/search/:searchTerm", async(req, res) => {
-    try {
-        const searchTerm = req.params.searchTerm;
-        console.log("API called with search term:", searchTerm);
+    const events = await Event.find();
 
-        const events = await searchEventsByTitle(searchTerm);
+    // filter manually so that each tag is also trimmed
+    const matchedEvents = events.filter((event) => {
+      // check eventName
+      const eventNameMatches = regex.test(event.eventName);
 
-        const response = {
-            message: events.length > 0 ? "Successfully found events" : "No events found matching your search",
-            events: events,
-            count: events.length,
-            searchTerm: searchTerm
-        };
+      const tags = (event.tags || []).map((tag) => tag.trim());
+      const tagsMatch = tags.some((tag) => regex.test(tag));
 
-        console.log("API response:", {
-            count: response.count,
-            message: response.message
-        });
+      return eventNameMatches || tagsMatch;
+    });
 
-        res.status(200).json(response);
-    } catch (error) {
-        console.error("API error:", error);
-        res.status(500).json({
-            message: "Failed to search events!",
-            error: error.message
-        });
-    }
+    res.status(200).json({
+      message:
+        matchedEvents.length > 0
+          ? "Successfully found events"
+          : "No events found matching your search",
+      events: matchedEvents,
+      count: matchedEvents.length,
+      searchTerm,
+    });
+  } catch (error) {
+    console.error("API error:", error);
+    res.status(500).json({
+      message: "Failed to search events!",
+      error: error.message,
+    });
+  }
 });
+
+
 
 
 // Test specific search
@@ -134,6 +140,7 @@ app.get("/events/test/:searchTerm", async(req, res) => {
         const searchLower = searchTerm.toLowerCase();
 
         const allEvents = await Event.find();
+
         const testResults = allEvents.map(event => ({
             eventName: event.eventName,
             eventNameLower: event.eventName?.toLowerCase(),
@@ -193,6 +200,8 @@ app.get("/events/:eventId",async(req,res)=>{
         res.status(500).json({message:"Failed to fetch event!",error:error});
     }
 })
+
+
 
 const PORT = 3000;
 app.listen(PORT,()=>{
